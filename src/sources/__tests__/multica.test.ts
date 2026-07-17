@@ -4,7 +4,8 @@ import {
   mapNotificationToWorkspaceEvent,
   normalizeInboxResponse,
 } from '../multica';
-import { WorkspaceEvent } from '../../events/types';
+import { AlertPipeline } from '../../alerts/pipeline';
+import { DiscordDelivery } from '../../delivery/discord';
 
 function sampleNotification(overrides: Partial<InboxNotification> = {}): InboxNotification {
   return {
@@ -178,10 +179,6 @@ describe('normalizeInboxResponse', () => {
   });
 });
 
-function waitFor(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 describe('inbox-to-discord integration', () => {
   it('deduplicates repeated notification ids through the pipeline', async () => {
     const sentMessages: string[] = [];
@@ -192,15 +189,16 @@ describe('inbox-to-discord integration', () => {
       workspaceId: 'ws-1',
     });
 
-    const delivery = {
-      async send(alert: WorkspaceEvent['metadata']) {
-        return { ok: true };
+    const delivery = new DiscordDelivery({
+      transport: {
+        async send(message: string) {
+          sentMessages.push(message);
+          return { ok: true as const };
+        },
       },
-    };
+    });
 
-    let pollCount = 0;
     jest.spyOn(global, 'fetch').mockImplementation(() => {
-      pollCount += 1;
       return Promise.resolve({
         ok: true,
         status: 200,
@@ -209,9 +207,14 @@ describe('inbox-to-discord integration', () => {
       } as Response);
     });
 
-    const events = await source.poll();
-    expect(events).toHaveLength(1);
-    expect(events[0].metadata?.notificationId).toBe('notif-1');
+    const pipeline = new AlertPipeline({ delivery });
+    const firstPoll = await source.poll();
+    const secondPoll = await source.poll();
+
+    await pipeline.handle(firstPoll[0], firstPoll[0].metadata?.notificationId as string);
+    await pipeline.handle(secondPoll[0], secondPoll[0].metadata?.notificationId as string);
+
+    expect(sentMessages).toHaveLength(1);
   });
 });
 
