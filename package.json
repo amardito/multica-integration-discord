@@ -3,11 +3,15 @@
   "version": "0.1.0",
   "description": "Discord alert delivery integration for Multica workspace events",
   "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "jest",
     "test:watch": "jest --watch",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "typecheck": "tsc --noEmit"
   },
   "keywords": [
     "multica",
@@ -25,5 +29,8 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "discord.js": "^14.27.0"
   }
 }

@@ -6,6 +6,7 @@
  * to avoid extra dependencies.
  */
 
+import { Client, Channel, TextChannel } from 'discord.js';
 import { NormalizedAlert } from '../events/types';
 
 export interface DeliveryResult {
@@ -28,6 +29,11 @@ export interface DiscordDeliveryConfig {
   transport?: DiscordTransport;
 }
 
+export interface DiscordBotTransportConfig {
+  client: Client;
+  channelId: string;
+}
+
 export class DiscordDelivery {
   private readonly transport: DiscordTransport;
 
@@ -48,13 +54,7 @@ export class DiscordDelivery {
    * without crashing the bot.
    */
   async send(alert: NormalizedAlert): Promise<SendResult> {
-    const message = [
-      `**${alert.title}**`,
-      '',
-      alert.body,
-      '',
-      `_${alert.footer}_`,
-    ].join('\n');
+    const message = renderMessage(alert);
 
     try {
       return await this.transport.send(message);
@@ -74,6 +74,53 @@ export function renderMessage(alert: NormalizedAlert): string {
     '',
     `_${alert.footer}_`,
   ].join('\n');
+}
+
+/**
+ * Discord bot transport that sends messages to a specific text channel.
+ *
+ * The caller is responsible for logging the bot in and ensuring the client is
+ * ready before sending messages.
+ */
+export class DiscordBotTransport implements DiscordTransport {
+  private readonly client: Client;
+  private readonly channelId: string;
+
+  constructor(config: DiscordBotTransportConfig) {
+    if (!config.client) {
+      throw new Error('DiscordBotTransport requires client');
+    }
+    if (!config.channelId) {
+      throw new Error('DiscordBotTransport requires channelId');
+    }
+    this.client = config.client;
+    this.channelId = config.channelId;
+  }
+
+  async send(message: string): Promise<SendResult> {
+    const channel = await this.resolveChannel();
+    if (!channel) {
+      return { ok: false, error: `channel ${this.channelId} not found or not accessible` };
+    }
+    if (!channel.isTextBased()) {
+      return { ok: false, error: `channel ${this.channelId} is not a text channel` };
+    }
+    try {
+      await (channel as TextChannel).send(message);
+      return { ok: true };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: `discord bot send failed: ${reason}` };
+    }
+  }
+
+  private async resolveChannel(): Promise<Channel | null> {
+    try {
+      return await this.client.channels.fetch(this.channelId);
+    } catch (err) {
+      return null;
+    }
+  }
 }
 
 function createHttpTransport(webhookUrl: string): DiscordTransport {
